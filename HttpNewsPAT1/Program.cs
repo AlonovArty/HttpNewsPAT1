@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -6,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using HtmlAgilityPack;
 
 namespace HttpNewsPAT1
 {
@@ -13,12 +15,43 @@ namespace HttpNewsPAT1
     {
         static void Main(string[] args)
         {
-
+            SetupDebugOutputToFile();
             Cookie token = SingIn("user", "user");
-            GetContent(token);
+            string Content = GetContent(token);
+            ParsingHtml(Content);
             Console.Read();
 
          
+        }
+
+        public static void ParsingAvitoHtml(string htmlCode)
+        {
+            var html = new HtmlDocument();
+            html.LoadHtml(htmlCode);
+            var Document = html.DocumentNode;
+            IEnumerable DivsNews = Document.Descendants(0).Where(n => n.HasClass("news"));
+            foreach (HtmlNode DivNews in DivsNews)
+            {
+                var src = DivNews.ChildNodes[1].GetAttributeValue("src", "none");
+                var name = DivNews.ChildNodes[3].InnerText;
+                var description = DivNews.ChildNodes[5].InnerText;
+                Console.WriteLine(name + "\n" + "Изображение: " + src + "\n" + "Описание: " + description + "\n");
+            }
+        }
+
+        public static void ParsingHtml(string htmlCode)
+        {
+            var html = new HtmlDocument();
+            html.LoadHtml(htmlCode);
+            var Document = html.DocumentNode;
+            IEnumerable DivsNews = Document.Descendants(0).Where(n => n.HasClass("news"));
+            foreach(HtmlNode DivNews in DivsNews)
+            {
+                var src = DivNews.ChildNodes[1].GetAttributeValue("src", "none");
+                var name = DivNews.ChildNodes[3].InnerText;
+                var description = DivNews.ChildNodes[5].InnerText;
+                Console.WriteLine(name + "\n" + "Изображение: " + src + "\n" + "Описание: " + description + "\n");
+            }
         }
 
         public static Cookie SingIn(string Login,string Password)
@@ -81,6 +114,16 @@ namespace HttpNewsPAT1
             }
             return Content;
            
+        }
+
+        private static void SetupDebugOutputToFile()
+        {
+            string logFilePath = "debug_log.txt";
+            TextWriterTraceListener traceListener = new TextWriterTraceListener(logFilePath);
+            Debug.Listeners.Clear();
+            Debug.Listeners.Add(traceListener);
+            Debug.AutoFlush = true;
+            Debug.WriteLine($"=== Начало сеанса: {DateTime.Now} ===");
         }
     }
 }
