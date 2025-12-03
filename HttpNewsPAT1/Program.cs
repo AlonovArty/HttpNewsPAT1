@@ -14,12 +14,17 @@ namespace HttpNewsPAT1
         static void Main(string[] args)
         {
 
-            SingIn("user", "user");
+            Cookie token = SingIn("user", "user");
+            GetContent(token);
             Console.Read();
+
+         
         }
 
-        public static void SingIn(string Login,string Password)
+        public static Cookie SingIn(string Login,string Password)
         {
+
+            Cookie token = null;
             string url = "http://localhost/ajax/login.php";
             Debug.WriteLine($"Выполняем запрос: {url}");
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
@@ -52,6 +57,19 @@ namespace HttpNewsPAT1
             dataStream.Close();
             response.Close();
             Console.Read();
+        }
+
+        public static void GetContent(Cookie Token)
+        {
+            string url = "http://localhost/main";
+            Debug.WriteLine($"Выполняем запрос: {url}");
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.CookieContainer = new CookieContainer();
+            request.CookieContainer.Add(Token);
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+            Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
+            string responseFromServer = new StreamReader(response.GetResponseStream()).ReadToEnd();
+            Console.WriteLine(responseFromServer);
         }
     }
 }
