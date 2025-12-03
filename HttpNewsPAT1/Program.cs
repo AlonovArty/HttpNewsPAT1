@@ -37,11 +37,17 @@ namespace HttpNewsPAT1
             using(var stream = request.GetRequestStream())
             {
                 stream.Write(Data, 0, Data.Length);
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse() ;
-                Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
-                string responseFromServer = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                Console.WriteLine(responseFromServer);
+                
             }
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            {
+                 Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
+            string responseFromServer = new StreamReader(response.GetResponseStream()).ReadToEnd();
+            Console.WriteLine(responseFromServer);
+                token = response.Cookies["token"];
+            }
+           
+            return token;
         }
 
         public static void Open()
@@ -59,17 +65,22 @@ namespace HttpNewsPAT1
             Console.Read();
         }
 
-        public static void GetContent(Cookie Token)
+        public static string GetContent(Cookie Token)
         {
+            string Content = null ;
             string url = "http://localhost/main";
             Debug.WriteLine($"Выполняем запрос: {url}");
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
             request.CookieContainer = new CookieContainer();
             request.CookieContainer.Add(Token);
-            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-            Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
-            string responseFromServer = new StreamReader(response.GetResponseStream()).ReadToEnd();
-            Console.WriteLine(responseFromServer);
+            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            {
+                Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
+                Content = new StreamReader(response.GetResponseStream()).ReadToEnd();
+                
+            }
+            return Content;
+           
         }
     }
 }
