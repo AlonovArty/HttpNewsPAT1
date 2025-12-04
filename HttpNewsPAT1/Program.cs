@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
@@ -13,18 +14,26 @@ namespace HttpNewsPAT1
 {
     public class Program
     {
-        static void Main(string[] args)
+        private static HttpClient _httpClient;
+
+        static async Task Main(string[] args)
         {
             SetupDebugOutputToFile();
-            //Cookie token = SingIn("admin", "admin");
-            //string Content = GetContent(token);
+            //Cookie token = await SingIn("admin", "admin");
+            //string Content = await GetContent(token);
             //ParsingHtml(Content);
             //Console.Read();
 
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-            ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, errors) => true; 
+            ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, errors) => true;
 
-            string content = GetContentFromAvito();
+            _httpClient = new HttpClient(new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) => true
+            });
+
+            string content = await GetContentFromAvito();
             if (!string.IsNullOrEmpty(content))
             {
                 ParsingHtmlAvito(content);
@@ -32,9 +41,9 @@ namespace HttpNewsPAT1
 
             Console.WriteLine("Готово. Нажмите любую клавишу...");
             Console.ReadKey();
-            Cookie token = SingIn("admin", "admin");
+            Cookie token = await SingIn("admin", "admin");
 
-            string result = AddItem(
+            string result = await AddItem(
                 token,
                 "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSQBAOUJ51mQFQoSE6iwW8YVk-yKjz4u5LAtQ&s",
                 "Объявляем сбор гуманитарной помощи для участников СВО",
@@ -43,6 +52,7 @@ namespace HttpNewsPAT1
 
             Console.WriteLine(result);
         }
+
         public static void ParsingHtmlAvito(string htmlCode)
         {
             var html = new HtmlDocument();
@@ -53,7 +63,7 @@ namespace HttpNewsPAT1
             if (items == null || items.Count == 0)
             {
                 Console.WriteLine("Объявления не найдены — возможно, сработала защита или изменилась структура.");
-                File.WriteAllText("last_page.html", htmlCode); 
+                File.WriteAllText("last_page.html", htmlCode);
                 Console.WriteLine("HTML страницы сохранён в last_page.html — открой и посмотри, что пришло.");
                 return;
             }
@@ -64,7 +74,7 @@ namespace HttpNewsPAT1
             {
                 try
                 {
-                    var titleNode = item.SelectSingleNode(".//a[@data-marker='item-title']//h3 | .//a[@data-marker='item-title']//div");
+                    var titleNode = item.SelectSingleNode(".//a[@data-marker='item-title'] | .//a[@data-marker='title']");
                     var priceNode = item.SelectSingleNode(".//span[@data-marker='item-price']//span | .//meta[@itemprop='price']");
                     var linkNode = item.SelectSingleNode(".//a[@data-marker='item-title']");
                     var locationNode = item.SelectSingleNode(".//div[@data-marker='item-location']//span");
@@ -87,49 +97,36 @@ namespace HttpNewsPAT1
             }
         }
 
-        public static string GetContentFromAvito()
+        public static async Task<string> GetContentFromAvito()
         {
             string url = "https://www.avito.ru/moskva/kvartiry/sdam/na_dlitelnyy_srok-ASgBAgICAkSSA8gQ8AeQUg?cd=1";
 
             Debug.WriteLine($"Выполняем запрос: {url}");
 
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.Method = "GET";
-
-            request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-            request.Accept = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8";
-            request.Headers.Add("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
-            request.Referer = "https://www.avito.ru/";
-            request.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;
-
-            request.CookieContainer = new CookieContainer();
-
             try
             {
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
+                request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8");
+                request.Headers.Add("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7");
+                request.Headers.Referrer = new Uri("https://www.avito.ru/");
+
+                var response = await _httpClient.SendAsync(request);
+                Debug.WriteLine($"Статус: {response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
                 {
-                    Debug.WriteLine($"Статус: {response.StatusCode}");
-                    using (Stream stream = response.GetResponseStream())
-                    using (StreamReader reader = new StreamReader(stream, Encoding.UTF8))
-                    {
-                        return reader.ReadToEnd();
-                    }
+                    return await response.Content.ReadAsStringAsync();
+                }
+                else
+                {
+                    Console.WriteLine($"Ошибка HTTP: {response.StatusCode}");
+                    return null;
                 }
             }
-            catch (WebException ex)
+            catch (Exception ex)
             {
                 Console.WriteLine($"Ошибка сети: {ex.Message}");
-                if (ex.Response != null)
-                {
-                    using (var errResp = (HttpWebResponse)ex.Response)
-                    using (var stream = errResp.GetResponseStream())
-                    using (var reader = new StreamReader(stream))
-                    {
-                        string errorHtml = reader.ReadToEnd();
-                        File.WriteAllText("error_page.html", errorHtml);
-                        Console.WriteLine("Страница с ошибкой/защитой сохранена в error_page.html");
-                    }
-                }
                 return null;
             }
         }
@@ -143,7 +140,6 @@ namespace HttpNewsPAT1
             Debug.AutoFlush = true;
             Debug.WriteLine($"=== Начало сеанса: {DateTime.Now} ===");
         }
-    
 
         public static void ParsingHtml(string htmlCode)
         {
@@ -151,7 +147,7 @@ namespace HttpNewsPAT1
             html.LoadHtml(htmlCode);
             var Document = html.DocumentNode;
             IEnumerable DivsNews = Document.Descendants(0).Where(n => n.HasClass("news"));
-            foreach(HtmlNode DivNews in DivsNews)
+            foreach (HtmlNode DivNews in DivsNews)
             {
                 var src = DivNews.ChildNodes[1].GetAttributeValue("src", "none");
                 var name = DivNews.ChildNodes[3].InnerText;
@@ -160,102 +156,112 @@ namespace HttpNewsPAT1
             }
         }
 
-        public static Cookie SingIn(string Login,string Password)
+        public static async Task<Cookie> SingIn(string Login, string Password)
         {
-
             Cookie token = null;
             string url = "http://localhost/ajax/login.php";
             Debug.WriteLine($"Выполняем запрос: {url}");
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.Method = "POST";
-            request.ContentType = "application/x-www-form-urlencoded";
-            request.CookieContainer = new CookieContainer();
-            string postData = $"login={Login}&password={Password}";
-            byte[] Data = Encoding.ASCII.GetBytes(postData);
-            request.ContentLength = Data.Length;
-            using(var stream = request.GetRequestStream())
+
+            try
             {
-                stream.Write(Data, 0, Data.Length);
-                
+                var handler = new HttpClientHandler();
+                handler.UseCookies = true;
+                var localHttpClient = new HttpClient(handler);
+
+                var postData = $"login={Login}&password={Password}";
+                var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
+
+                var response = await localHttpClient.PostAsync(url, content);
+                Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
+
+                string responseFromServer = await response.Content.ReadAsStringAsync();
+                Console.WriteLine(responseFromServer);
+
+                var cookies = handler.CookieContainer.GetCookies(new Uri("http://localhost"));
+                token = cookies["token"];
             }
-            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+            catch (Exception ex)
             {
-                 Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
-            string responseFromServer = new StreamReader(response.GetResponseStream()).ReadToEnd();
-            Console.WriteLine(responseFromServer);
-                token = response.Cookies["token"];
+                Console.WriteLine($"Ошибка: {ex.Message}");
             }
-           
+
             return token;
         }
 
-
-        public static string AddItem(Cookie token, string src, string name, string description)
+        public static async Task<string> AddItem(Cookie token, string src, string name, string description)
         {
             string url = "http://localhost/ajax/add.php";
             Debug.WriteLine($"Выполняем запрос: {url}");
 
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.Method = "POST";
-            request.ContentType = "application/x-www-form-urlencoded";
+            try
+            {
+                var localHttpClient = new HttpClient();
 
-            request.CookieContainer = new CookieContainer();
-            request.CookieContainer.Add(token);
-
-            string postData = $"src={Uri.EscapeDataString(src)}" +
+                var postData = $"src={Uri.EscapeDataString(src)}" +
                               $"&name={Uri.EscapeDataString(name)}" +
                               $"&description={Uri.EscapeDataString(description)}";
 
-            byte[] data = Encoding.UTF8.GetBytes(postData);
-            request.ContentLength = data.Length;
+                var content = new StringContent(postData, Encoding.UTF8, "application/x-www-form-urlencoded");
 
-            using (var stream = request.GetRequestStream())
-                stream.Write(data, 0, data.Length);
+                if (token != null)
+                {
+                    localHttpClient.DefaultRequestHeaders.Add("Cookie", $"token={token.Value}");
+                }
 
-            string responseText;
-            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-            using (var reader = new StreamReader(response.GetResponseStream()))
-            {
+                var response = await localHttpClient.PostAsync(url, content);
                 Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
-                responseText = reader.ReadToEnd();
+
+                return await response.Content.ReadAsStringAsync();
             }
-
-            return responseText;
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка: {ex.Message}");
+                return null;
+            }
         }
 
-        public static void Open()
+        public static async Task Open()
         {
-            WebRequest request = WebRequest.Create("http://localhost/main");
-            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-            Console.Write(response.StatusDescription);
-            Stream dataStream = response.GetResponseStream();
-            StreamReader reader = new StreamReader(dataStream);
-            string responseFromServer = reader.ReadToEnd();
-            Console.WriteLine(responseFromServer);
-            reader.Close();
-            dataStream.Close();
-            response.Close();
-            Console.Read();
+            try
+            {
+                var response = await _httpClient.GetAsync("http://localhost/main");
+                Console.Write(response.StatusCode);
+                string responseFromServer = await response.Content.ReadAsStringAsync();
+                Console.WriteLine(responseFromServer);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка: {ex.Message}");
+            }
         }
 
-        public static string GetContent(Cookie Token)
+        public static async Task<string> GetContent(Cookie Token)
         {
-            string Content = null ;
+            string Content = null;
             string url = "http://localhost/main";
             Debug.WriteLine($"Выполняем запрос: {url}");
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-            request.CookieContainer = new CookieContainer();
-            request.CookieContainer.Add(Token);
-            using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-            {
-                Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
-                Content = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                
-            }
-            return Content;
-           
-        }
 
-     
+            try
+            {
+                var localHttpClient = new HttpClient();
+
+                if (Token != null)
+                {
+                    localHttpClient.DefaultRequestHeaders.Add("Cookie", $"token={Token.Value}");
+                }
+
+                var response = await localHttpClient.GetAsync(url);
+                Debug.WriteLine($"Статус выполнения: {response.StatusCode}");
+
+                Content = await response.Content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Ошибка: {ex.Message}");
+            }
+
+            return Content;
+        }
     }
+
 }
